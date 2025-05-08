@@ -88,8 +88,6 @@ Nuverse Hackathon/
    FLASK_ENV=development
    DATABASE_URL=postgresql://username:password@localhost:5432/medifox
    OPENAI_API_KEY=your_openai_api_key
-   PUBMED_API_EMAIL=your_email@example.com
-   PUBMED_API_TOOL=medifox-symptom-assessment
    ```
 
 5. Initialize the database:
@@ -147,8 +145,6 @@ Nuverse Hackathon/
 | FLASK_ENV | Environment mode | development |
 | DATABASE_URL | PostgreSQL connection string | postgresql://username:password@localhost:5432/medifox |
 | OPENAI_API_KEY | Your OpenAI API key | sk-... |
-| PUBMED_API_EMAIL | Email for PubMed API calls | your_email@example.com |
-| PUBMED_API_TOOL | Tool name for PubMed API | medifox-symptom-assessment |
 
 ### Frontend (.env)
 
