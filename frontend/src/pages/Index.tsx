@@ -93,6 +93,11 @@ const Index = () => {
       // Extract clinical trials if available
       const clinicalTrials = response.clinical_trials || [];
       
+      // Debug log for clinical trials
+      console.log('Response clinical_trials field:', response.clinical_trials);
+      console.log('Clinical trials extracted:', clinicalTrials);
+      console.log('Clinical trials count:', clinicalTrials.length);
+      
       // Extract Do's and Don'ts if available
       const dos = response.dos || [];
       const donts = response.donts || [];

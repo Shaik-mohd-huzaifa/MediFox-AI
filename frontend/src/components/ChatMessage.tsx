@@ -16,6 +16,7 @@ interface ChatMessageProps {
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isUser, pubmedReferences = [], clinicalTrials = [], dos = [], donts = [] }) => {
   const [expandedReference, setExpandedReference] = useState<string | null>(null);
+  const [expandedTrial, setExpandedTrial] = useState<string | null>(null);
   
   // Debug log to verify props
   useEffect(() => {
@@ -121,11 +122,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isUser, pubmedRefere
                 <span>Medical Resources:</span>
               </div>
               
-              {/* DEBUG: Add counts of resources */}
-              <div className="text-xs text-gray-500 mb-1">
-                {pubmedReferences.length > 0 && <span>{pubmedReferences.length} PubMed references</span>}
-                {pubmedReferences.length > 0 && clinicalTrials.length > 0 && <span> • </span>}
-                {clinicalTrials.length > 0 && <span>{clinicalTrials.length} Clinical trials</span>}
+              {/* Section headers for resources */}
+              <div className="text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                <div>
+                  {pubmedReferences.length > 0 && <span className="text-[#FF7F2E]">{pubmedReferences.length} PubMed References</span>}
+                  {pubmedReferences.length > 0 && clinicalTrials.length > 0 && <span className="mx-2">|</span>}
+                  {clinicalTrials.length > 0 && <span className="text-blue-600">{clinicalTrials.length} Clinical Trials</span>}
+                </div>
               </div>
               
               <div className="flex flex-wrap gap-2">
@@ -150,19 +153,65 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isUser, pubmedRefere
                 {clinicalTrials.length > 0 && clinicalTrials.map((trial) => {
                   if (!trial || !trial.nct_id) return null;
                   const trialUrl = trial.url || `https://clinicaltrials.gov/study/${trial.nct_id}`;
+                  const isExpanded = expandedTrial === trial.nct_id;
+                  
                   return (
-                    <a
-                      key={`trial-${trial.nct_id}`}
-                      href={trialUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-800 transition-colors"
-                    >
-                      <Beaker size={12} className="mr-1 text-blue-600" />
-                      <span>Trial: {trial.nct_id}</span>
-                    </a>
+                    <div key={`trial-container-${trial.nct_id}`} className="w-full mb-2">
+                      <div 
+                        onClick={() => setExpandedTrial(isExpanded ? null : trial.nct_id)}
+                        className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-800 transition-colors cursor-pointer"
+                      >
+                        <Beaker size={12} className="mr-1 text-blue-600" />
+                        <span>{trial.nct_id}</span>
+                        {isExpanded ? 
+                          <ChevronUp size={12} className="ml-1 text-blue-600" /> : 
+                          <ChevronDown size={12} className="ml-1 text-blue-600" />}
+                      </div>
+                      
+                      {isExpanded && (
+                        <div className="mt-2 p-3 bg-blue-50 rounded-md text-xs">
+                          <h4 className="font-bold mb-1">{trial.title}</h4>
+                          <div className="grid grid-cols-2 gap-2 mb-2">
+                            <div>
+                              <span className="font-semibold">Status:</span> {trial.status}
+                            </div>
+                            <div>
+                              <span className="font-semibold">Phase:</span> {trial.phase}
+                            </div>
+                            <div>
+                              <span className="font-semibold">Start:</span> {trial.start_date}
+                            </div>
+                            <div>
+                              <span className="font-semibold">End:</span> {trial.completion_date}
+                            </div>
+                          </div>
+                          <p className="mb-2">{trial.summary}</p>
+                          {trial.conditions && trial.conditions.length > 0 && (
+                            <div className="mb-2">
+                              <span className="font-semibold">Conditions:</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {Array.isArray(trial.conditions) ? trial.conditions.map((condition, idx) => (
+                                  <span key={idx} className="px-1 py-0.5 bg-blue-100 rounded text-blue-800">{condition}</span>
+                                )) : <span>{trial.conditions}</span>}
+                              </div>
+                            </div>
+                          )}
+                          <div className="mt-2">
+                            <a 
+                              href={trialUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline inline-flex items-center"
+                            >
+                              <ExternalLink size={10} className="mr-1" /> View full details
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
-                })}
+                })
+                }
               </div>
             </div>
           )}
