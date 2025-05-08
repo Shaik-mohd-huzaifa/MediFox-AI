@@ -1,0 +1,17 @@
+Flask==2.3.3
+flask-sqlalchemy==3.1.1
+psycopg2-binary==2.9.9
+Flask-Migrate==4.0.5
+python-dotenv==1.0.0
+flask-cors==4.0.0
+
+# AI and LLM dependencies
+langchain==0.1.9
+langchain-openai==0.0.5
+openai==1.12.0
+
+# PubMed API and data processing
+biopython
+requests
+pandas
+python-dotenv
