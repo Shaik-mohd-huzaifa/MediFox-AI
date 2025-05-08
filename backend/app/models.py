@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 from . import db
@@ -41,6 +41,9 @@ class PubMedReference(db.Model):
     date = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Relationship to assessment
+    assessment = db.relationship('SymptomAssessment', back_populates='references')
+    
     def __repr__(self):
         return f'<PubMedReference {self.pmid}>'
     
@@ -52,6 +55,47 @@ class PubMedReference(db.Model):
             'title': self.title,
             'abstract': self.abstract,
             'date': self.date
+        }
+
+
+class ClinicalTrial(db.Model):
+    """Model for clinical trials related to a symptom assessment"""
+    __tablename__ = 'clinical_trials'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    assessment_id = db.Column(db.Integer, db.ForeignKey('symptom_assessments.id', ondelete='CASCADE'), nullable=False)
+    nct_id = db.Column(db.String(20))
+    title = db.Column(db.Text)
+    status = db.Column(db.String(50))
+    phase = db.Column(db.String(50))
+    summary = db.Column(db.Text)
+    conditions = db.Column(db.Text)  # Stored as JSON string
+    start_date = db.Column(db.String(50))
+    completion_date = db.Column(db.String(50))
+    url = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    
+    assessment = db.relationship('SymptomAssessment', back_populates='clinical_trials')
+    
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization"""
+        # Parse conditions from JSON string if needed
+        try:
+            conditions = json.loads(self.conditions) if self.conditions else []
+        except:
+            conditions = [self.conditions] if self.conditions else []
+            
+        return {
+            'id': self.id,
+            'nct_id': self.nct_id,
+            'title': self.title,
+            'status': self.status,
+            'phase': self.phase,
+            'summary': self.summary,
+            'conditions': conditions,
+            'start_date': self.start_date,
+            'completion_date': self.completion_date,
+            'url': self.url if self.url else f'https://clinicaltrials.gov/study/{self.nct_id}'
         }
 
 
@@ -271,20 +315,25 @@ class SymptomAssessment(db.Model):
     __tablename__ = 'symptom_assessments'
     
     id = db.Column(db.Integer, primary_key=True)
-    patient_id = db.Column(db.String(100), nullable=True)  # Optional patient identifier
+    patient_id = db.Column(db.String(50), nullable=True)  # Nullable for anonymous users
     symptoms = db.Column(db.Text, nullable=False)
     age = db.Column(db.Integer, nullable=True)
-    sex = db.Column(db.String(10), nullable=True)
+    sex = db.Column(db.String(20), nullable=True)
     medical_history = db.Column(db.Text, nullable=True)
     urgency_level = db.Column(db.String(20), nullable=False)
     urgency_description = db.Column(db.Text, nullable=False)
     reasoning = db.Column(db.Text, nullable=False)
     recommendations = db.Column(db.Text, nullable=False)  # Stored as JSON string
+    dos = db.Column(db.Text, nullable=True)  # Stored as JSON string for do's
+    donts = db.Column(db.Text, nullable=True)  # Stored as JSON string for don'ts
     disclaimer = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationships
-    references = db.relationship('PubMedReference', backref='assessment', lazy=True, cascade='all, delete-orphan')
+    # Relationship to PubMed references
+    references = db.relationship('PubMedReference', back_populates='assessment', cascade='all, delete-orphan')
+    
+    # Relationship to Clinical Trials
+    clinical_trials = db.relationship('ClinicalTrial', back_populates='assessment', cascade='all, delete-orphan')
     # The used_documents field was removed as it doesn't exist in the database schema
     
     def __repr__(self):
@@ -296,6 +345,17 @@ class SymptomAssessment(db.Model):
             recommendations = json.loads(self.recommendations)
         except:
             recommendations = [self.recommendations]
+        
+        # Parse dos and donts if available
+        try:
+            dos = json.loads(self.dos) if self.dos else []
+        except:
+            dos = []
+            
+        try:
+            donts = json.loads(self.donts) if self.donts else []
+        except:
+            donts = []
             
         return {
             'id': self.id,
@@ -308,7 +368,10 @@ class SymptomAssessment(db.Model):
             'urgency_description': self.urgency_description,
             'reasoning': self.reasoning,
             'recommendations': recommendations,
+            'dos': dos,
+            'donts': donts,
             'disclaimer': self.disclaimer,
             'created_at': self.created_at.isoformat(),
-            'references': [ref.to_dict() for ref in self.references]
+            'references': [ref.to_dict() for ref in self.references],
+            'clinical_trials': [trial.to_dict() for trial in self.clinical_trials]
         }

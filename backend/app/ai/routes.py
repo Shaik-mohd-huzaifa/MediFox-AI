@@ -1,11 +1,11 @@
 """Routes for the AI symptom assessment functionality."""
 import json
 import logging
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, jsonify, request, current_app
 import re
 
 from .. import db
-from ..models import SymptomAssessment, PubMedReference, MedicalDocument, Profile, Appointment
+from ..models import SymptomAssessment, PubMedReference, ClinicalTrial, MedicalDocument, Profile, Appointment
 from .agent import SymptomAssessmentAgent
 
 # Configure logging
@@ -241,6 +241,8 @@ def assess_symptoms():
                 urgency_description=assessment['urgency_description'],
                 reasoning=assessment['reasoning'],
                 recommendations=json.dumps(assessment['recommendations']),
+                dos=json.dumps(assessment.get('dos', [])),
+                donts=json.dumps(assessment.get('donts', [])),
                 disclaimer=assessment['disclaimer']
                 # used_documents field is omitted
             )
@@ -263,6 +265,31 @@ def assess_symptoms():
                     date=ref.get('date')
                 )
                 db.session.add(pub_ref)
+                
+            # Save the Clinical Trials
+            clinical_trials = assessment.get('clinical_trials', [])
+            logger.info(f"Clinical trials found for medical query: {len(clinical_trials)}")
+            if clinical_trials:
+                logger.info(f"Clinical trials details: {json.dumps(clinical_trials)}")
+            
+            for trial in clinical_trials:
+                # Convert conditions to JSON string if it's a list
+                conditions = trial.get('conditions', [])
+                conditions_json = json.dumps(conditions) if isinstance(conditions, list) else conditions
+                
+                clinical_trial = ClinicalTrial(
+                    assessment_id=new_assessment.id,
+                    nct_id=trial.get('nct_id'),
+                    title=trial.get('title'),
+                    status=trial.get('status'),
+                    phase=trial.get('phase'),
+                    summary=trial.get('summary'),
+                    conditions=conditions_json,
+                    start_date=trial.get('start_date'),
+                    completion_date=trial.get('completion_date'),
+                    url=trial.get('url')
+                )
+                db.session.add(clinical_trial)
             
             db.session.commit()
             

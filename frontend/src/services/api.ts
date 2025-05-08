@@ -27,6 +27,18 @@ export interface PubMedReference {
   date: string;
 }
 
+export interface ClinicalTrial {
+  nct_id: string;
+  title: string;
+  status: string;
+  phase: string;
+  summary: string;
+  conditions: string[];
+  start_date: string;
+  completion_date: string;
+  url: string;
+}
+
 export interface SymptomAssessmentResponse {
   id: number;
   patient_id?: string;
@@ -38,9 +50,12 @@ export interface SymptomAssessmentResponse {
   urgency_description: string;
   reasoning: string;
   recommendations: string; // JSON string to be parsed
+  dos?: string[]; // List of recommended actions
+  donts?: string[]; // List of actions to avoid
   disclaimer: string;
   created_at: string;
   pubmed_references?: PubMedReference[];
+  clinical_trials?: ClinicalTrial[];
 }
 
 // AI Service API
@@ -64,6 +79,15 @@ const aiService = {
       // Parse the recommendations from JSON string to object
       if (response.data.recommendations && typeof response.data.recommendations === 'string') {
         response.data.recommendations = JSON.parse(response.data.recommendations);
+      }
+      
+      // Parse dos and donts arrays if they're in string format
+      if (response.data.dos && typeof response.data.dos === 'string') {
+        response.data.dos = JSON.parse(response.data.dos);
+      }
+      
+      if (response.data.donts && typeof response.data.donts === 'string') {
+        response.data.donts = JSON.parse(response.data.donts);
       }
       
       return response.data;

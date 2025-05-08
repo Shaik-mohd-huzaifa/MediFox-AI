@@ -6,20 +6,16 @@ import PromptCategory from '../components/PromptCategory';
 import ChatHeader from '../components/ChatHeader';
 import { useToast } from "@/hooks/use-toast";
 import { SymptomAssessment } from "@/components/SymptomAssessment";
-import aiService from "@/services/api";
-
-interface PubMedReference {
-  pmid: string;
-  title: string;
-  abstract?: string;
-  date?: string;
-}
+import aiService, { PubMedReference, ClinicalTrial, SymptomAssessmentResponse } from '../services/api';
 
 interface Message {
   text: string;
   isUser: boolean;
   isLoading?: boolean;
   pubmedReferences?: PubMedReference[];
+  clinicalTrials?: ClinicalTrial[];
+  dos?: string[];
+  donts?: string[];
 }
 
 const Index = () => {
@@ -91,12 +87,24 @@ const Index = () => {
       setMessages((prev) => prev.filter(msg => !msg.isLoading));
       
       // Extract PubMed references if available
-      const pubmedReferences = response.pubmed_references || [];
+      // Note: API returns them as 'references', not 'pubmed_references'
+      const pubmedReferences = response.references || response.pubmed_references || [];
       
-      // Log PubMed references for debugging
+      // Extract clinical trials if available
+      const clinicalTrials = response.clinical_trials || [];
+      
+      // Extract Do's and Don'ts if available
+      const dos = response.dos || [];
+      const donts = response.donts || [];
+      
+      // Log response data for debugging
       console.log('Response from backend:', response);
       console.log('PubMed references extracted:', pubmedReferences);
       console.log('Number of PubMed references:', pubmedReferences.length);
+      console.log('Clinical trials extracted:', clinicalTrials);
+      console.log('Number of clinical trials:', clinicalTrials.length);
+      console.log('Do\'s extracted:', dos);
+      console.log('Don\'ts extracted:', donts);
       
       // Create a comprehensive response from the assessment
       const recommendations = response.recommendations;
@@ -125,16 +133,34 @@ const Index = () => {
         recommendationsText = String(recommendations || 'No specific recommendations');
       }
       
+      // We'll skip adding references text to avoid duplication with the UI component
+      const referencesText = '';
+
       // Format the AI response with patient name if available
       const aiResponse = patientName 
-        ? `${responsePrefix}here is my assessment:\n\n**Urgency Level: ${response.urgency_level}**\n${response.urgency_description}\n\n**Why I'm saying this:**\n${response.reasoning}\n\n**What you should do:**\n${recommendationsText}\n\n**Remember:**\n${response.disclaimer}`
-        : `**Urgency Level: ${response.urgency_level}**\n${response.urgency_description}\n\n**Reasoning:**\n${response.reasoning}\n\n**Recommendations:**\n${recommendationsText}\n\n**Disclaimer:**\n${response.disclaimer}`;
+        ? `${responsePrefix}here is my assessment:\n\n**Urgency Level: ${response.urgency_level}**\n${response.urgency_description}\n\n**Why I'm saying this:**\n${response.reasoning}\n\n**What you should do:**\n${recommendationsText}${referencesText}\n\n**Remember:**\n${response.disclaimer}`
+        : `**Urgency Level: ${response.urgency_level}**\n${response.urgency_description}\n\n**Reasoning:**\n${response.reasoning}\n\n**Recommendations:**\n${recommendationsText}${referencesText}\n\n**Disclaimer:**\n${response.disclaimer}`;
+        
+      // DEBUG: Log the message object being created (after aiResponse is defined)
+      console.log('AI Response:', aiResponse);
+      const messageObj = { 
+        text: aiResponse, 
+        isUser: false,
+        pubmedReferences: pubmedReferences,
+        clinicalTrials: clinicalTrials,
+        dos: dos,
+        donts: donts
+      };
+      console.log('ChatMessage props being passed:', messageObj);
 
-      // Add the AI's response with PubMed references
+      // Add the AI's response with PubMed references, clinical trials, do's and don'ts
       setMessages((prev) => [...prev, { 
         text: aiResponse, 
         isUser: false,
-        pubmedReferences: pubmedReferences 
+        pubmedReferences: pubmedReferences,
+        clinicalTrials: clinicalTrials,
+        dos: dos,
+        donts: donts
       }]);
       
       toast({

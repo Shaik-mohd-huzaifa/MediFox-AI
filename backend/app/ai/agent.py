@@ -2,11 +2,13 @@
 import os
 import logging
 import json
+import re
 from typing import Dict, List, Any, Optional
 from openai import OpenAI
 from datetime import datetime
 
 from .pubmed_tool import PubMedTool
+from .clinical_trials_tool import ClinicalTrialsTool
 from ..models import MedicalDocument
 
 # Configure logging
@@ -38,6 +40,7 @@ class SymptomAssessmentAgent:
         
         # Create PubMed tool
         self.pubmed_tool = PubMedTool()
+        self.clinical_trials_tool = ClinicalTrialsTool()
         
         # Initialize conversation history
         self.conversation_history = []
@@ -54,6 +57,7 @@ class SymptomAssessmentAgent:
         5. Consider patient demographics (age, sex, medical history) when relevant
         6. Always include a clear disclaimer about the limitations of AI assessment
         7. Make your response conversational and human-like
+        8. ALWAYS include both do's and don'ts in your response
 
         Urgency Levels:
         - high: Conditions requiring immediate medical attention (e.g., chest pain with shortness of breath)
@@ -70,9 +74,13 @@ class SymptomAssessmentAgent:
             "urgency_description": "[brief description of urgency recommendation addressed to the patient]",
             "reasoning": "[detailed explanation of your assessment addressed directly to the patient]",
             "recommendations": ["recommendation1 addressed to patient", "recommendation2 addressed to patient", ...],
+            "dos": ["specific action to take 1", "specific action to take 2", ...],
+            "donts": ["specific action to avoid 1", "specific action to avoid 2", ...],
             "disclaimer": "I'm an AI assistant and this is not a medical diagnosis. Please consult with a healthcare professional for proper medical advice."
         }
-        """
+        
+        The 'dos' and 'donts' lists are VERY IMPORTANT and will be displayed prominently in the UI with color-coding.
+        Make these actionable, specific instructions directly relevant to the patient's symptoms."""
     
     def assess_symptoms(self, symptoms: str, age: int = None, sex: str = None, 
                   medical_history: str = None, patient_id: str = None) -> Dict[str, Any]:
@@ -173,13 +181,34 @@ class SymptomAssessmentAgent:
             
             # Default to searching PubMed if it's a medical query
             search_pubmed = is_medical_query
-            pubmed_query = symptoms if search_pubmed else None
+            # Extract just the medical symptoms for PubMed search
+            # Remove any "Patient X reports:" pattern from the query
+            if search_pubmed:
+                patient_mention_regex = r"Patient [\w\s]+ reports:\s*(.*)"
+                patient_mention = re.search(patient_mention_regex, symptoms)
+                
+                if patient_mention:
+                    # Extract just the symptom part
+                    pubmed_query = patient_mention.group(1).strip()
+                    logger.info(f"Extracted symptoms for PubMed search: '{pubmed_query}'")
+                else:
+                    # If no matching pattern, use the entire symptoms string
+                    pubmed_query = symptoms
+                    
+                # Further refine the query to focus on medical terms
+                # Remove common non-medical words and focus on symptoms
+                pubmed_query = re.sub(r"\b(have|has|having|experiencing|suffering|from|with|and|the|is|are|my|I|feel|feeling|patient)\b", "", pubmed_query, flags=re.IGNORECASE)
+                pubmed_query = pubmed_query.strip()
+                logger.info(f"Refined PubMed search query: '{pubmed_query}'")
+            else:
+                pubmed_query = None
             
             logger.info(f"Medical classification: is_medical={is_medical_query}, search_pubmed={search_pubmed}, reason={medical_classification_reason}")
             
             # Step 2: Get PubMed references if needed
             pubmed_info = ""
             pubmed_references = []
+            clinical_trials = []
             
             if search_pubmed and pubmed_query:
                 logger.info(f"Searching PubMed with query: {pubmed_query}")
@@ -190,7 +219,8 @@ class SymptomAssessmentAgent:
                     # Detailed logging of raw references
                     logger.info(f"Raw PubMed search results: {json.dumps(references)}")
                     
-                    if references and not any('error' in ref for ref in references):
+                    # Check if we have valid references (not just error or info messages)
+                    if references and not any(key in ref for ref in references for key in ['error', 'info']):
                         pubmed_references = []
                         pubmed_info = "\n\nRelevant medical literature:\n"
                         
@@ -221,8 +251,32 @@ class SymptomAssessmentAgent:
                             logger.info(f"Added PubMed reference: {json.dumps(ref_obj)}")
                         
                         logger.info(f"Total PubMed references processed: {len(pubmed_references)}")
+                        
+                        # Also search for clinical trials with the same query
+                        logger.info(f"Searching for clinical trials with query: {pubmed_query}")
+                        try:
+                            trials = self.clinical_trials_tool.get_trials_for_query(pubmed_query, max_results=2)
+                            
+                            # Detailed logging of raw clinical trials
+                            logger.info(f"Raw Clinical Trials search results: {json.dumps(trials)}")
+                            
+                            if trials and not any(key in trial for trial in trials for key in ['error', 'info']):
+                                clinical_trials = trials
+                                logger.info(f"Total clinical trials processed: {len(clinical_trials)}")
+                                
+                                # Log each trial for debugging
+                                for trial in clinical_trials:
+                                    logger.info(f"Clinical trial: NCT ID={trial.get('nct_id')}, title={trial.get('title')}, url={trial.get('url')}")
+                                logger.info(f"Found {len(clinical_trials)} clinical trials for query: {pubmed_query}")
+                            else:
+                                logger.info(f"No clinical trials found for query: {pubmed_query}")
+                        except Exception as ct_err:
+                            logger.error(f"Error getting clinical trials: {str(ct_err)}", exc_info=True)
+                            
                     else:
                         logger.warning(f"No valid PubMed references found or references contain errors")
+                        # Don't append placeholder references when none are found
+                        pubmed_references = []
                 except Exception as pub_err:
                     logger.error(f"Error getting PubMed references: {str(pub_err)}", exc_info=True)
                     
@@ -269,6 +323,8 @@ class SymptomAssessmentAgent:
                     "reasoning": "System error occurred. Please consult with a healthcare professional.",
                     "recommendations": ["Consult with a healthcare professional as soon as possible", 
                                       "For technical support, contact the system administrator to set up the API key"],
+                    "dos": ["Contact your healthcare provider", "Seek medical help if symptoms worsen"],
+                    "donts": ["Don't ignore your symptoms", "Don't wait if you feel your condition is deteriorating"],
                     "disclaimer": "This is an AI-assisted pre-assessment and not a medical diagnosis. Always consult with a healthcare professional for proper medical advice.",
                     "pubmed_references": [],
                     "is_medical_query": True,
@@ -291,6 +347,8 @@ class SymptomAssessmentAgent:
                     "urgency_description": "Due to a system error, we recommend consulting with a healthcare professional",
                     "reasoning": "System error occurred. Please consult with a healthcare professional.",
                     "recommendations": ["Consult with a healthcare professional as soon as possible"],
+                    "dos": ["Contact your healthcare provider", "Seek medical help if symptoms worsen"],
+                    "donts": ["Don't ignore your symptoms", "Don't wait if you feel your condition is deteriorating"],
                     "disclaimer": "This is an AI-assisted pre-assessment and not a medical diagnosis. Always consult with a healthcare professional for proper medical advice.",
                     "pubmed_references": [],
                     "is_medical_query": True,
@@ -304,34 +362,40 @@ class SymptomAssessmentAgent:
             response_content = response.choices[0].message.content
             
             # Parse the JSON response
-            assessment = json.loads(response_content)
+            llm_response = json.loads(response_content)
             
             # Add standard fields if they're missing
-            if "disclaimer" not in assessment:
-                assessment["disclaimer"] = "This is an AI-assisted pre-assessment and not a medical diagnosis. Always consult with a healthcare professional for proper medical advice."
+            if "disclaimer" not in llm_response:
+                llm_response["disclaimer"] = "This is an AI-assisted pre-assessment and not a medical diagnosis. Always consult with a healthcare professional for proper medical advice."
             
             # Convert to appropriate urgency description format
-            if assessment["urgency_level"] == "high":
-                assessment["urgency_level"] = "high"
-                if not "urgency_description" in assessment or not assessment["urgency_description"]:
-                    assessment["urgency_description"] = "Seek immediate medical attention"
-            elif assessment["urgency_level"] == "medium":
-                assessment["urgency_level"] = "medium"
-                if not "urgency_description" in assessment or not assessment["urgency_description"]:
-                    assessment["urgency_description"] = "Consult with a healthcare provider soon"
+            if llm_response["urgency_level"] == "high":
+                llm_response["urgency_level"] = "high"
+                if not "urgency_description" in llm_response or not llm_response["urgency_description"]:
+                    llm_response["urgency_description"] = "Seek immediate medical attention"
+            elif llm_response["urgency_level"] == "medium":
+                llm_response["urgency_level"] = "medium"
+                if not "urgency_description" in llm_response or not llm_response["urgency_description"]:
+                    llm_response["urgency_description"] = "Consult with a healthcare provider soon"
             else:
                 # Default urgency for non-urgent cases
-                assessment["urgency_level"] = "low"
-                if not "urgency_description" in assessment or not assessment["urgency_description"]:
-                    assessment["urgency_description"] = "Monitor symptoms and practice appropriate self-care"
+                llm_response["urgency_level"] = "low"
+                if not "urgency_description" in llm_response or not llm_response["urgency_description"]:
+                    llm_response["urgency_description"] = "Monitor symptoms and practice appropriate self-care"
+            
+            # Extract dos and donts from the LLM response
+            dos = llm_response.get("dos", [])
+            donts = llm_response.get("donts", [])
             
             # Format the response as a dict
             assessment = {
-                "urgency_level": assessment["urgency_level"],
-                "urgency_description": assessment["urgency_description"],
-                "reasoning": assessment["reasoning"],
-                "recommendations": assessment["recommendations"],
-                "disclaimer": assessment["disclaimer"],
+                "urgency_level": llm_response["urgency_level"],
+                "urgency_description": llm_response["urgency_description"],
+                "reasoning": llm_response["reasoning"],
+                "recommendations": llm_response["recommendations"],
+                "disclaimer": llm_response["disclaimer"],
+                "dos": dos,
+                "donts": donts,
                 "is_medical_query": is_medical_query,
                 "classification_reason": medical_classification_reason,
                 "used_document_ids": used_document_ids
@@ -344,6 +408,16 @@ class SymptomAssessmentAgent:
             else:
                 logger.warning("No PubMed references to add to the response")
                 assessment["pubmed_references"] = []
+                
+            # Add clinical trials if any
+            if clinical_trials:
+                logger.info(f"Adding {len(clinical_trials)} clinical trials to final response")
+                assessment["clinical_trials"] = clinical_trials
+                # Log the detailed clinical trials data
+                logger.info(f"Clinical trials in final response: {json.dumps(assessment['clinical_trials'])}")
+            else:
+                logger.info("No clinical trials to add to the response")
+                assessment["clinical_trials"] = []
             
             # Log the entire assessment for debugging
             logger.info(f"Final assessment response structure: {json.dumps({k: type(v).__name__ for k, v in assessment.items()})}")
@@ -360,6 +434,8 @@ class SymptomAssessmentAgent:
                 "urgency_description": "Due to an error in processing, we recommend consulting with a healthcare professional",
                 "reasoning": "Assessment error occurred. Please consult with a healthcare professional.",
                 "recommendations": ["Consult with a healthcare professional as soon as possible"],
+                "dos": ["Contact your healthcare provider", "Seek medical help if symptoms worsen"],
+                "donts": ["Don't ignore your symptoms", "Don't wait if you feel your condition is deteriorating"],
                 "disclaimer": "This is an AI-assisted pre-assessment and not a medical diagnosis. Always consult with a healthcare professional for proper medical advice.",
                 "pubmed_references": []
             }
